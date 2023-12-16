@@ -1,30 +1,25 @@
 // client.cpp
 
 #include "client.h"
+#include <iostream>
+#include <cstring>
+#include <unistd.h>
+#include <arpa/inet.h>
 
 Client::Client()
 {
-    // Khởi tạo Winsock
-    WSADATA wsaData;
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
-    {
-        std::cerr << "Failed to initialize Winsock" << std::endl;
-    }
-
     // Tạo socket
     clientSocket = socket(AF_INET, SOCK_STREAM, 0);
-    if (clientSocket == INVALID_SOCKET)
+    if (clientSocket == -1)
     {
         std::cerr << "Error creating socket" << std::endl;
-        WSACleanup();
     }
 }
 
 Client::~Client()
 {
-    // Đóng socket và giải phóng Winsock khi kết thúc
-    closesocket(clientSocket);
-    WSACleanup();
+    // Đóng socket khi kết thúc
+    close(clientSocket);
 }
 
 bool Client::connectToServer(const std::string &serverIP, int port)
@@ -36,7 +31,7 @@ bool Client::connectToServer(const std::string &serverIP, int port)
     serverAddr.sin_port = htons(port);
 
     // Kết nối đến server
-    if (connect(clientSocket, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR)
+    if (connect(clientSocket, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) == -1)
     {
         std::cerr << "Error connecting to the server" << std::endl;
         return false;
@@ -48,8 +43,8 @@ bool Client::connectToServer(const std::string &serverIP, int port)
 
 bool Client::sendData(const std::string &data) const
 {
-    int bytesSent = send(clientSocket, data.c_str(), data.length(), 0);
-    if (bytesSent == SOCKET_ERROR || bytesSent != static_cast<int>(data.length()))
+    ssize_t bytesSent = send(clientSocket, data.c_str(), data.length(), 0);
+    if (bytesSent == -1 || static_cast<size_t>(bytesSent) != data.length())
     {
         std::cerr << "Error sending data" << std::endl;
         return false;
@@ -62,11 +57,10 @@ std::string Client::receiveData() const
     char buffer[1024];
     memset(buffer, 0, sizeof(buffer));
 
-    int bytesReceived = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
-    if (bytesReceived == SOCKET_ERROR)
+    ssize_t bytesReceived = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
+    if (bytesReceived == -1)
     {
-        int errorCode = WSAGetLastError();
-        std::cerr << "Error receiving data. Error code: " << errorCode << std::endl;
+        perror("Error receiving data");
         return std::string(); // Trả về một chuỗi rỗng để chỉ ra lỗi
     }
     else if (bytesReceived == 0)

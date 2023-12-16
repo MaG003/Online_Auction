@@ -4,7 +4,9 @@
 #define CLIENT_H
 
 #include <iostream>
-#include <WinSock2.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 #include <string>
 
 class Client
@@ -18,7 +20,7 @@ public:
     std::string receiveData() const;
 
 private:
-    SOCKET clientSocket;
+    int clientSocket;
 };
 
 #endif // CLIENT_H
