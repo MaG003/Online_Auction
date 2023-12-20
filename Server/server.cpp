@@ -10,12 +10,14 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
+#include <sql.h>
+#include <sqlext.h>
 
-std::vector<User> readUsersFromTxt(const std::string &filename);
-std::vector<AuctionRoom> readAuctionRoomsFromTxt(const std::string &filename);
+std::vector<User> readUsersFromSQLServer();
+std::vector<AuctionRoom> readAuctionRoomsFromSQLServer();
 
-void writeUsersToTxt(const std::string &filename, const std::vector<User> &users);
-void writeAuctionRoomsToTxt(const std::string &filename, const std::vector<AuctionRoom> &rooms);
+void writeAuctionRoomsToSQLServer(const std::vector<AuctionRoom> &rooms);
+void writeUsersToSQLServer(const std::vector<User> &users);
 
 std::vector<std::string> requestClient(int clientSocket, const std::vector<User> &users)
 {
@@ -70,9 +72,9 @@ void handleRegistrationRequest(int clientSocket, std::vector<User> &users, std::
             // Tạo người dùng mới và thêm vào danh sách
             User newUser = User::signupUser(newUsername, newPassword, newEmail);
             users.push_back(newUser);
-
+            
             // Ghi danh sách người dùng mới vào tệp
-            writeUsersToTxt("user_data.txt", users);
+            writeUsersToSQLServer(users);
 
             // Gửi thông báo thành công về cho client
             const char *successMessage = "User registered successfully!";
@@ -151,7 +153,7 @@ void handleCreateAuctionRoomRequest(int clientSocket, std::vector<AuctionRoom> &
             rooms.push_back(newRoom);
 
             // Ghi danh sách phòng đấu giá mới vào tệp
-            writeAuctionRoomsToTxt("auction_rooms.txt", rooms);
+            writeAuctionRoomsToSQLServer(rooms);
 
             // Gửi thông báo thành công về cho client
             sendMessageToClient(clientSocket, "Auction Room created successfully!");
@@ -226,8 +228,8 @@ int main()
 
     std::cout << "Server is listening for connections..." << std::endl;
 
-    std::vector<User> users = readUsersFromTxt("user_data.txt");
-    std::vector<AuctionRoom> rooms = readAuctionRoomsFromTxt("auction_rooms.txt");
+    std::vector<User> users = readUsersFromSQLServer();
+    std::vector<AuctionRoom> rooms = readAuctionRoomsFromSQLServer();
 
     while (true)
     {
