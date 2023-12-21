@@ -3,15 +3,14 @@
 #include <fstream>
 #include <vector>
 #include "user.h"
-#include "randomID.h"
+
 
 User::User()
 {
-
+    // Thực hiện khởi tạo mặc định nếu cần
 }
-
-User::User(const std::string &userId, const std::string &username, const std::string &password, const std::string &email)
-    : userId(userId), username(username), password(password), email(email)
+User::User(const std::string &username, const std::string &password, const std::string &email)
+    : username(username), password(password), email(email)
 {
     // Khởi tạo đối tượng User với thông tin đầy đủ
 }
@@ -21,16 +20,13 @@ bool User::isValidLogin(const std::string &enteredUsername, const std::string &e
     return (enteredUsername == username && enteredPassword == password);
 }
 
-User User::signupUser(const std::string &userId, const std::string &username, const std::string &password, const std::string &email)
+User User::signupUser(const std::string &username, const std::string &password, const std::string &email)
 {
-    return User(userId, username, password, email);
+    // Tạo đối tượng User với thông tin đầy đủ và trả về
+    return User(username, password, email);
 }
-
 void User::displayUserInfo() const
 {
-    std::cout << "Username: " << username << std::endl;
-    std::cout << "Password: " << password << std::endl;
-    std::cout << "Email: " << email << std::endl;
 }
 
 std::string User::getPassword() const
@@ -46,9 +42,4 @@ std::string User::getUsername() const
 std::string User::getEmail() const
 {
     return email;
-}
-
-std::string User::getUserId() const
-{
-    return userId;
 }

@@ -4,13 +4,10 @@
 #include "user.h"
 #include "auction_room.h"
 #include "client.h"
-#include "randomID.h"
 
 std::vector<User> readUsersFromServer(Client &client);
 
 AuctionRoom createAuctionRoom();
-
-std::string generateRandomString();
 
 // Quản lý người dùng
 // Hàm để đọc thông tin người dùng từ server
@@ -68,7 +65,7 @@ bool loginUser(Client &client, const std::string &enteredUsername, const std::st
 void registerUserToServer(Client &client, const User &newUser)
 {
     // Gửi yêu cầu đăng ký và thông tin người dùng lên server
-    client.sendData("REGISTER " + newUser.getUserId() + " " + newUser.getUsername() + " " + newUser.getPassword() + " " + newUser.getEmail());
+    client.sendData("REGISTER " + newUser.getUsername() + " " + newUser.getPassword() + " " + newUser.getEmail());
 
     // Nhận dữ liệu từ server (thông báo đăng ký thành công hoặc lỗi)
     std::string receivedData = client.receiveData();
@@ -80,7 +77,7 @@ void registerUserToServer(Client &client, const User &newUser)
 void writeAuctionRoomToServer(Client &client, const AuctionRoom &room)
 {
     // Gửi yêu cầu ghi thông tin phòng đấu giá lên server
-    client.sendData("CREATE_AUCTION_ROOM " + room.getRoomId() + " " + room.getName() + " " + room.getDetails());
+    client.sendData("CREATE_AUCTION_ROOM " + room.getName() + " " + room.getDetails());
 
     // Nhận dữ liệu từ server (thông báo đăng ký thành công hoặc lỗi)
     std::string receivedData = client.receiveData();
@@ -158,14 +155,12 @@ int main()
                     std::cout << "Menu" << std::endl;
                     std::cout << "4. Create Auction Room\n5. View Auction Rooms\n6. Logout\n";
                     std::cin >> choice;
-                    std::string newRoomId, newRoomname, newDetails;
+                    std::string newRoomname, newDetails;
 
                     switch (choice)
                     {
                     case 4:
                         // Thêm chức năng tạo mới phòng đấu giá sau khi đăng nhập thành công
-
-                        newRoomId = generateRandomString();
 
                         std::cout << "Enter new roomname: ";
                         std::cin >> newRoomname;
@@ -173,7 +168,7 @@ int main()
                         std::cout << "Enter new Roomdetails: ";
                         std::cin >> newDetails;
 
-                        newRoom = AuctionRoom::createAuctionRoom(newRoomId, newRoomname, newDetails);
+                        newRoom = AuctionRoom::createAuctionRoom(newRoomname, newDetails);
 
                         writeAuctionRoomToServer(client, newRoom);
 
@@ -243,10 +238,7 @@ int main()
         case 2:
         {
             // Đăng ký người dùng mới và gửi thông tin lên server
-            std::string newUserId, newUsername, newPassword, newEmail;
-
-            newUserId = generateRandomString();
-
+            std::string newUsername, newPassword, newEmail;
             std::cout << "Enter new username: ";
             std::cin >> newUsername;
 
@@ -256,7 +248,7 @@ int main()
             std::cout << "Enter email: ";
             std::cin >> newEmail;
 
-            User newUser = User::signupUser(newUserId, newUsername, newPassword, newEmail);
+            User newUser = User::signupUser(newUsername, newPassword, newEmail);
 
             // Gọi hàm để đăng ký người dùng mới
             registerUserToServer(client, newUser);
