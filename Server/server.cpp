@@ -1,278 +1,254 @@
 #include <iostream>
 #include <cstring>
-#include <cerrno>
-#include <fstream>
-#include <algorithm>
-#include <vector>
-#include "user.h"
-#include "auction_room.h"
-
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include <unistd.h>
-#include <sql.h>
-#include <sqlext.h>
+#include "signin.h"
+#include "connect_sql.h"
+#include "auction_room.h"
+#include <sstream>
+#include <iomanip>
 
-std::vector<User> readUsersFromSQLServer();
-std::vector<AuctionRoom> readAuctionRoomsFromSQLServer();
-
-void writeAuctionRoomsToSQLServer(const std::vector<AuctionRoom> &rooms);
-void writeUsersToSQLServer(const std::vector<User> &users);
-
-std::vector<std::string> requestClient(int clientSocket, const std::vector<User> &users)
-{
-    char buffer[1024];
-    memset(buffer, 0, sizeof(buffer));
-    recv(clientSocket, buffer, sizeof(buffer), 0);
-    std::cout << "Received registration request from client: " << buffer << std::endl;
-
-    std::string clientData(buffer);
-
-    std::vector<std::string> requestDataParts;
-    size_t pos = 0;
-    while ((pos = clientData.find(' ')) != std::string::npos)
-    {
-        std::string part = clientData.substr(0, pos);
-        requestDataParts.push_back(part);
-        clientData.erase(0, pos + 1);
-    }
-    if (!clientData.empty())
-    {
-        requestDataParts.push_back(clientData);
-    }
-    for (const auto &part : requestDataParts)
-    {
-        std::cout << "Part: " << part << std::endl;
-    }
-    return requestDataParts;
-}
-
-// Thêm hàm xử lý yêu cầu đăng ký người dùng
-void handleRegistrationRequest(int clientSocket, std::vector<User> &users, std::vector<std::string> requestDataParts)
-{
-    if (requestDataParts.size() == 4)
-    {
-        std::string newUsername = requestDataParts[1];
-        std::string newPassword = requestDataParts[2];
-        std::string newEmail = requestDataParts[3];
-
-        // Kiểm tra xem người dùng có tồn tại hay chưa
-        bool userExists = false;
-        for (const auto &user : users)
-        {
-            if (user.getUsername() == newUsername)
-            {
-                userExists = true;
-                break;
-            }
-        }
-
-        if (!userExists)
-        {
-            // Tạo người dùng mới và thêm vào danh sách
-            User newUser = User::signupUser(newUsername, newPassword, newEmail);
-            users.push_back(newUser);
-            
-            // Ghi danh sách người dùng mới vào tệp
-            writeUsersToSQLServer(users);
-
-            // Gửi thông báo thành công về cho client
-            const char *successMessage = "User registered successfully!";
-            send(clientSocket, successMessage, strlen(successMessage), 0);
-            std::cout << "Message sent to client" << std::endl;
-        }
-        else
-        {
-            // Gửi thông báo lỗi về cho client nếu người dùng đã tồn tại
-            const char *errorMessage = "Username already exists. Please choose a different username.";
-            send(clientSocket, errorMessage, strlen(errorMessage), 0);
-            std::cout << "Error message sent to client" << std::endl;
-        }
-    }
-    else
-    {
-        // Gửi thông báo lỗi về cho client nếu định dạng dữ liệu không hợp lệ
-        const char *errorMessage = "Invalid data format for user registration";
-        send(clientSocket, errorMessage, strlen(errorMessage), 0);
-        std::cout << "Error message sent to client" << std::endl;
-    }
-}
-
-// Hàm xử lý yêu cầu đọc thông tin người dùng và trả về client
-void handleReadUserRequest(int clientSocket, const std::vector<User> &users)
-{
-    // Tạo một chuỗi để lưu thông tin người dùng
-    std::string userData;
-
-    // Kiểm tra xem danh sách người dùng có rỗng hay không
-    if (users.empty())
-    {
-        // Gửi thông báo về cho client nếu danh sách người dùng rỗng
-        const char *message = "No users to display";
-        send(clientSocket, message, strlen(message), 0);
-        std::cout << "Message sent to client" << std::endl;
-    }
-    else
-    {
-        // Lặp qua danh sách người dùng và thêm thông tin vào chuỗi
-        for (const auto &user : users)
-        {
-            // Thêm thông tin người dùng vào chuỗi (có thể định dạng chuỗi theo ý muốn)
-            userData += user.getUsername() + " " + user.getPassword() + " " + user.getEmail() + "\n";
-        }
-
-        // Gửi thông tin người dùng về cho client
-        send(clientSocket, userData.c_str(), userData.length(), 0);
-        std::cout << "User data sent to client" << std::endl;
-    }
-}
-
-// Hàm để gửi thông báo về client
-void sendMessageToClient(int clientSocket, const char *message)
-{
-    send(clientSocket, message, strlen(message), 0);
-    std::cout << "Message sent to client" << std::endl;
-}
-
-// Hàm xử lý yêu cầu tạo phòng đấu giá từ client
-void handleCreateAuctionRoomRequest(int clientSocket, std::vector<AuctionRoom> &rooms, const std::vector<std::string> &requestDataParts)
-{
-    if (requestDataParts.size() == 3)
-    {
-        std::string roomName = requestDataParts[1];
-        std::string roomDetails = requestDataParts[2];
-
-        // Kiểm tra xem phòng đấu giá có tồn tại hay không
-        auto existingRoom = std::find_if(rooms.begin(), rooms.end(), [&](const AuctionRoom &room)
-                                         { return room.getName() == roomName; });
-
-        if (existingRoom == rooms.end())
-        {
-            // Tạo phòng đấu giá mới và thêm vào danh sách
-            AuctionRoom newRoom = AuctionRoom::createAuctionRoom(roomName, roomDetails);
-            rooms.push_back(newRoom);
-
-            // Ghi danh sách phòng đấu giá mới vào tệp
-            writeAuctionRoomsToSQLServer(rooms);
-
-            // Gửi thông báo thành công về cho client
-            sendMessageToClient(clientSocket, "Auction Room created successfully!");
-        }
-        else
-        {
-            // Gửi thông báo lỗi về cho client nếu phòng đấu giá đã tồn tại
-            sendMessageToClient(clientSocket, "Auction Room already exists. Please choose a different name.");
-        }
-    }
-    else
-    {
-        // Gửi thông báo lỗi về cho client nếu định dạng dữ liệu không hợp lệ
-        sendMessageToClient(clientSocket, "Invalid data format for Auction Room creation");
-    }
-}
-
-// Hàm xử lý yêu cầu đọc thông tin phòng đấu giá và trả về client
-void handleReadAuctionRoomsRequest(int clientSocket, const std::vector<AuctionRoom> &rooms)
-{
-    // Tạo một chuỗi để lưu thông tin phòng đấu giá
-    std::string roomData;
-
-    // Kiểm tra xem danh sách phòng đấu giá có rỗng hay không
-    if (rooms.empty())
-    {
-        // Gửi thông báo về cho client nếu danh sách phòng đấu giá rỗng
-        sendMessageToClient(clientSocket, "No auction rooms available");
-    }
-    else
-    {
-        // Lặp qua danh sách phòng đấu giá và thêm thông tin vào chuỗi
-        for (const auto &room : rooms)
-        {
-            // Thêm thông tin phòng đấu giá vào chuỗi (có thể định dạng chuỗi theo ý muốn)
-            roomData += room.getName() + " " + room.getDetails() + "\n";
-        }
-
-        // Gửi thông tin phòng đấu giá về cho client
-        send(clientSocket, roomData.c_str(), roomData.length(), 0);
-        std::cout << "Auction room data sent to client" << std::endl;
-    }
-}
+using namespace std;
 
 int main()
 {
+    AuctionRoom room;
+
+    // Khởi tạo socket
     int serverSocket = socket(AF_INET, SOCK_STREAM, 0);
+
     if (serverSocket == -1)
     {
-        std::cerr << "Error creating socket" << std::endl;
+        cerr << "Error creating socket." << endl;
         return -1;
     }
 
-    sockaddr_in serverAddr;
-    serverAddr.sin_family = AF_INET;
-    serverAddr.sin_addr.s_addr = INADDR_ANY;
-    serverAddr.sin_port = htons(12345);
+    // Cấu hình địa chỉ và cổng cho server
+    sockaddr_in serverAddress;
+    serverAddress.sin_family = AF_INET;
+    serverAddress.sin_addr.s_addr = INADDR_ANY;
+    serverAddress.sin_port = htons(8888); // Chọn một cổng khác nếu cần
 
-    if (bind(serverSocket, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) == -1)
+    // Liên kết địa chỉ và cổng với socket
+    if (bind(serverSocket, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) == -1)
     {
-        std::cerr << "Bind failed with error: " << strerror(errno) << std::endl;
+        cerr << "Error binding socket." << endl;
         close(serverSocket);
         return -1;
     }
 
-    if (listen(serverSocket, SOMAXCONN) == -1)
+    // Lắng nghe kết nối
+    if (listen(serverSocket, 10) == -1)
     {
-        std::cerr << "Listen failed with error: " << strerror(errno) << std::endl;
+        cerr << "Error listening on socket." << endl;
         close(serverSocket);
         return -1;
     }
 
-    std::cout << "Server is listening for connections..." << std::endl;
+    cout << "Server listening on port 8888..." << endl;
 
-    std::vector<User> users = readUsersFromSQLServer();
-    std::vector<AuctionRoom> rooms = readAuctionRoomsFromSQLServer();
+    // Chấp nhận kết nối từ client
+    sockaddr_in clientAddress;
+    socklen_t clientAddressLength = sizeof(clientAddress);
+    int clientSocket = accept(serverSocket, (struct sockaddr *)&clientAddress, &clientAddressLength);
+
+    if (clientSocket == -1)
+    {
+        cerr << "Error accepting connection." << endl;
+        close(serverSocket);
+        return -1;
+    }
+
+    char clientIP[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(clientAddress.sin_addr), clientIP, INET_ADDRSTRLEN);
+    cout << "Connection accepted from " << clientIP << endl;
 
     while (true)
     {
-        int clientSocket;
-        sockaddr_in clientAddr;
-        socklen_t clientAddrSize = sizeof(clientAddr);
-        clientSocket = accept(serverSocket, (struct sockaddr *)&clientAddr, &clientAddrSize);
-        if (clientSocket == -1)
+        // Nhận dữ liệu từ client
+        char buffer[1024];
+        ssize_t bytesRead = recv(clientSocket, buffer, sizeof(buffer), 0);
+
+        if (bytesRead == -1)
         {
-            std::cerr << "Accept failed with error: " << strerror(errno) << std::endl;
-            close(serverSocket);
-            return -1;
+            cerr << "Error receiving data." << endl;
+            break;
         }
-
-        std::cout << "Client connected." << std::endl;
-
-        int check = 0;
-        while (check == 0)
+        else if (bytesRead == 0)
         {
-            std::vector<std::string> requestDataParts = requestClient(clientSocket, users);
-            std::string requestType = requestDataParts[0];
+            cout << "Client disconnected." << endl;
+            break;
+        }
+        else
+        {
+            buffer[bytesRead] = '\0'; // Kết thúc chuỗi
+            cout << "Received from client: " << buffer << endl;
 
-            if (requestType == "REGISTER")
+            // Kiểm tra nếu là chuỗi "QUIT" thì đóng kết nối và thoát khỏi vòng lặp
+            if (strcmp(buffer, "QUIT") == 0)
             {
-                handleRegistrationRequest(clientSocket, users, requestDataParts);
+                cout << "Closing connection..." << endl;
+                break;
             }
-            else if (requestType == "READ_USERS")
+
+            // Kiểm tra nếu là chuỗi "SIGNIN" thì thực hiện xác thực đăng nhập
+            if (strncmp(buffer, "SIGNIN ", 7) == 0)
             {
-                handleReadUserRequest(clientSocket, users);
+                // Lấy username và password từ chuỗi nhận được
+                char *signInData = buffer + 7; // Bỏ qua "SIGNIN "
+                char *username = strtok(signInData, " ");
+                char *password = strtok(nullptr, " ");
+
+                if (username != nullptr && password != nullptr)
+                {
+                    SQLHDBC hdbc;
+                    SQLHENV henv;
+
+                    // Connect to the database
+                    if (ConnectToDatabase(hdbc, henv))
+                    {
+                        cout << "Connected to the database." << endl;
+
+                        // Thực hiện xác thực đăng nhập và nhận thông tin người dùng
+                        UserInfo userInfo;
+                        if (authenticateUser(hdbc, username, password, userInfo))
+                        {
+                            // Gửi phản hồi đăng nhập thành công về client
+                            string successMessage = "SIGNINCR " + userInfo.userid + " " + userInfo.username;
+                            send(clientSocket, successMessage.c_str(), successMessage.length(), 0);
+                            cout << "Sent to client: " << successMessage << endl;
+                        }
+                        else
+                        {
+                            // Gửi phản hồi đăng nhập thất bại về client
+                            const char *failureMessage = "SIGNINICR";
+                            send(clientSocket, failureMessage, strlen(failureMessage), 0);
+                            cout << "Sent to client: " << failureMessage << endl;
+                        }
+
+                        // Disconnect from the database
+                        DisconnectFromDatabase(hdbc, henv);
+                        cout << "Disconnected from the database." << endl;
+                    }
+                    else
+                    {
+                        cerr << "Failed to connect to the database." << endl;
+                    }
+                }
             }
-            else if (requestType == "CREATE_AUCTION_ROOM")
+
+            // Kiểm tra nếu là chuỗi "CREATEROOM" thì thực hiện tạo phòng
+            else if (strncmp(buffer, "CREATEROOM ", 11) == 0)
             {
-                handleCreateAuctionRoomRequest(clientSocket, rooms, requestDataParts);
+                // Lấy userid, roomname, và roomdetail từ chuỗi nhận được
+                char *createRoomData = buffer + 11; // Bỏ qua "CREATEROOM "
+                char *userid = strtok(createRoomData, " ");
+                char *roomname = strtok(nullptr, " ");
+                char *roomdetail = strtok(nullptr, " ");
+
+                if (userid != nullptr && roomname != nullptr && roomdetail != nullptr)
+                {
+                    // Tạo phòng và thêm vào cơ sở dữ liệu
+                    SQLHDBC hdbc;
+                    SQLHENV henv;
+
+                    if (ConnectToDatabase(hdbc, henv))
+                    {
+                        cout << "Connected to the database." << endl;
+
+                        // Thực hiện tạo phòng và kiểm tra kết quả
+                        if (room.createRoom(hdbc, userid, roomname, roomdetail))
+                        {
+                            // // Gửi phản hồi tạo phòng thành công về client
+                            // string roomid = room.getRoomIDAsString(hdbc, roomname);
+
+                            // Sử dụng phương thức c_str() để chuyển đổi std::string thành const char *
+                            const char *successMessage = "CREATEROOMCR ";
+                            send(clientSocket, successMessage, strlen(successMessage), 0);
+                            cout << "Sent to client: " << successMessage << endl;
+                        }
+
+                        else
+                        {
+                            // Gửi phản hồi tạo phòng thất bại về client
+                            const char *failureMessage = "CREATEROOMICR";
+                            send(clientSocket, failureMessage, strlen(failureMessage), 0);
+                            cout << "Sent to client: " << failureMessage << endl;
+                        }
+
+                        DisconnectFromDatabase(hdbc, henv);
+                        cout << "Disconnected from the database." << endl;
+                    }
+                    else
+                    {
+                        cerr << "Failed to connect to the database." << endl;
+                    }
+                }
             }
-            else if (requestType == "READ_AUCTION_ROOMS")
+
+            else if (strncmp(buffer, "ADDITEM ", 8) == 0)
             {
-                handleReadAuctionRoomsRequest(clientSocket, rooms);
+                // Lấy RoomID, itemname, startingPrice, AuctionStartTime, AuctionEndTime, và BuyItNowPrice từ chuỗi nhận được
+                char *addItemData = buffer + 8; // Bỏ qua "ADDITEM "
+                char *roomid = strtok(addItemData, " ");
+                char *itemname = strtok(nullptr, " ");
+                double startingPrice = atof(strtok(nullptr, " "));
+                char *auctionStartTime = strtok(nullptr, " ");
+                char *auctionEndTime = strtok(nullptr, " ");
+                double buyItNowPrice = atof(strtok(nullptr, " "));
+
+                if (roomid != nullptr && itemname != nullptr && auctionStartTime != nullptr && auctionEndTime != nullptr)
+                {
+                    // Thêm mục vào phòng đấu giá và kiểm tra kết quả
+                    SQLHDBC hdbc;
+                    SQLHENV henv;
+
+                    if (ConnectToDatabase(hdbc, henv))
+                    {
+                        cout << "Connected to the database." << endl;
+
+                        // Thực hiện thêm mục và kiểm tra kết quả
+                        if (room.addItem(hdbc, roomid, itemname, startingPrice, auctionStartTime, auctionEndTime, buyItNowPrice))
+                        {
+                            // Gửi phản hồi thêm mục thành công về client
+                            const char *successMessage = "ADDITEMCR";
+                            send(clientSocket, successMessage, strlen(successMessage), 0);
+                            cout << "Sent to client: " << successMessage << endl;
+                        }
+                        else
+                        {
+                            // Gửi phản hồi thêm mục thất bại về client
+                            const char *failureMessage = "ADDITEMICR";
+                            send(clientSocket, failureMessage, strlen(failureMessage), 0);
+                            cout << "Sent to client: " << failureMessage << endl;
+                        }
+
+                        DisconnectFromDatabase(hdbc, henv);
+                        cout << "Disconnected from the database." << endl;
+                    }
+                    else
+                    {
+                        cerr << "Failed to connect to the database." << endl;
+                    }
+                }
+            }
+
+            // Gửi dữ liệu trả về client (hoặc thông báo đến client)
+            send(clientSocket, buffer, strlen(buffer), 0);
+
+            // Kiểm tra nếu là chuỗi "QUIT" thì đóng kết nối và thoát khỏi vòng lặp
+            if (strcmp(buffer, "QUIT") == 0)
+            {
+                cout << "Closing connection..." << endl;
+                break;
             }
         }
-
-        close(clientSocket);
     }
 
+    // Đóng socket
+    close(clientSocket);
     close(serverSocket);
 
     return 0;

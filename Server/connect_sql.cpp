@@ -2,11 +2,8 @@
 #include "connect_sql.h"
 
 // Function to connect to the database
-SQLHENV ConnectToDatabase()
+SQLHENV ConnectToDatabase(SQLHDBC &hdbc, SQLHENV &henv)
 {
-    SQLHENV henv;
-    SQLHDBC hdbc;
-
     // Allocate environment handle
     SQLAllocHandle(SQL_HANDLE_ENV, SQL_NULL_HANDLE, &henv);
 

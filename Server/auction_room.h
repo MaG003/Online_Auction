@@ -1,24 +1,24 @@
+// auction_room.h
+
 #ifndef AUCTION_ROOM_H
 #define AUCTION_ROOM_H
 
+#include <sql.h>
+#include <sqlext.h>
 #include <string>
 
 class AuctionRoom
 {
 public:
     AuctionRoom();
-    AuctionRoom(const std::string &name, const std::string &details);
+    ~AuctionRoom();
 
-    std::string getName() const;
-    std::string getDetails() const;
-
-    void startAuction();
-    static AuctionRoom createAuctionRoom(const std::string &newRoomname, const std::string &newRoomdetails);
-    static void viewAuctionRooms(const std::string &filename);
+    bool createRoom(SQLHDBC hdbc, const char *userid, const char *roomname, const char *roomdetail);
+    std::string getRoomIDAsString(SQLHDBC hdbc, const char *roomname);
+    bool addItem(SQLHDBC hdbc, const char *roomid, const char *itemname, double startingPrice, const char *auctionStartTime, const char *auctionEndTime, double buyItNowPrice);
 
 private:
-    std::string name;
-    std::string details; 
+    // Các thành viên khác cần thiết
 };
 
 #endif // AUCTION_ROOM_H
